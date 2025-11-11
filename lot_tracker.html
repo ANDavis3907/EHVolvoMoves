@@ -1,0 +1,957 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lot Attendant Tracker</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f7f9fb; }
+        .container-card {
+            /* Optimized for mobile (less padding, no top/bottom margin) */
+            max-width: 1200px;
+            margin: 0 auto; 
+            padding: 1rem; 
+        }
+        @media (min-width: 640px) { /* sm breakpoint and up: restore desktop spacing */
+            .container-card {
+                margin-top: 2rem;
+                margin-bottom: 2rem;
+                padding: 2rem;
+            }
+        }
+        .report-card, .scan-button {
+            transition: all 0.2s ease-in-out;
+            cursor: pointer;
+        }
+        .report-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 15px rgba(0, 0, 0, 0.1);
+        }
+        .scan-button:disabled {
+            background-color: #9ca3af;
+            cursor: not-allowed;
+        }
+        .loading-overlay, .modal-overlay, .confirm-modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+        }
+        /* Custom progress bar spinner */
+        .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            border-left-color: #3b82f6;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        /* Mobile fixes for modal content */
+        .modal-overlay .max-h-\[75vh\] {
+            max-height: 85vh; /* Give more height to content in modal on mobile */
+        }
+        
+        .vehicle-list-item {
+            cursor: pointer;
+            transition: background-color 0.1s ease;
+        }
+        .vehicle-list-item:hover {
+            background-color: #f0f4ff;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container-card">
+        <header class="mb-6 md:mb-8 text-center md:text-left">
+            <!-- Responsive text sizing for main title -->
+            <h1 class="text-3xl sm:text-4xl font-extrabold text-gray-900 mb-1">Lot Attendant Tracker</h1>
+            <p class="text-lg sm:text-xl text-blue-600 font-semibold">Vehicle Intelligence and Management</p>
+        </header>
+        
+        <!-- User ID Display (MANDATORY for Firebase/Multi-user) -->
+        <div id="user-info" class="bg-blue-50 border-l-4 border-blue-400 text-blue-700 p-3 rounded-lg mb-6 shadow-md">
+            <p class="font-medium text-sm">Authenticated User ID (Development): <span id="user-id" class="font-mono text-sm">Initializing...</span></p>
+        </div>
+
+
+        <!-- 1. VIN/LOCATION SCANNER SECTION -->
+        <section class="bg-white p-4 sm:p-6 md:p-8 rounded-xl shadow-lg mb-8 sm:mb-12">
+            <h2 class="text-xl sm:text-2xl font-bold text-gray-800 mb-5 border-b pb-3 flex items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6 mr-2 text-blue-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M15 9l-3 3-3-3"/></svg>
+                VIN/Location Scanner & Search
+            </h2>
+            
+            <div class="flex flex-col gap-6"> 
+                <!-- Image Upload and Preview Area -->
+                <div class="w-full bg-gray-50 p-4 rounded-xl border-2 border-dashed border-gray-300 flex flex-col items-center justify-center h-56 sm:h-64 relative">
+                    <input type="file" id="imageInput" accept="image/*" class="absolute inset-0 opacity-0 cursor-pointer" onchange="previewImage(event)">
+                    <img id="imagePreview" class="max-h-full max-w-full rounded-lg shadow-md hidden" alt="Image Preview">
+                    <div id="uploadPlaceholder" class="text-center text-gray-500 p-4">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mx-auto h-8 w-8 text-gray-400 mb-2"><path d="M4 14.899V20a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5.101M16 10l-4-4-4 4M12 16V6"/></svg>
+                        <p class="text-sm">Click to upload photo (VIN, Tag, or Location)</p>
+                    </div>
+                </div>
+
+                <!-- Query Input and Button -->
+                <div class="w-full flex flex-col">
+                    <label for="queryInput" class="block text-base font-medium text-gray-700 mb-2">Enter VIN, Stock Tag, or ID to Match</label>
+                    <input type="text" id="queryInput" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 shadow-sm" placeholder="e.g., VIN, Stock# 51234, or Tag TX-ABC-123">
+
+                    <button id="scanButton" onclick="handleScan()" class="scan-button mt-4 w-full flex items-center justify-center px-6 py-3 border border-transparent text-base font-medium rounded-xl text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500" disabled>
+                        <span id="buttonText">Scan Image & Look Up Record</span>
+                        <div id="spinner" class="spinner ml-2 hidden"></div>
+                    </button>
+                    
+                    <div id="errorBox" class="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded-lg hidden text-sm"></div>
+
+                </div>
+            </div>
+
+            <!-- Scan Result Area -->
+            <div class="mt-6 border-t pt-6">
+                <h3 class="text-lg sm:text-xl font-semibold text-gray-800 mb-3">Vehicle Lookup Result <span id="resultAction" class="text-sm font-normal text-gray-500">(Scanned data is ready to save)</span></h3>
+                <div id="resultBox" class="min-h-[80px] p-4 bg-gray-50 border border-gray-200 rounded-xl shadow-inner text-gray-700 whitespace-pre-wrap text-sm">
+                    Upload an image and enter an ID to simulate a record lookup.
+                </div>
+                <div id="citationBox" class="mt-4 text-xs text-gray-500 border-t pt-2 hidden">
+                    <p class="font-medium text-gray-600">Sources:</p>
+                    <ul id="sourcesList" class="list-disc list-inside ml-2"></ul>
+                </div>
+                
+                <!-- Save/Update Button -->
+                <button id="saveRecordButton" onclick="saveVehicleRecord()" class="scan-button mt-4 w-full flex items-center justify-center px-6 py-3 border border-transparent text-base font-medium rounded-xl text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 hidden" disabled>
+                    <span id="saveButtonText">Save New Vehicle Record</span>
+                </button>
+            </div>
+
+        </section>
+
+
+        <!-- 2. SAVED VEHICLE RECORDS -->
+        <section class="bg-white p-4 sm:p-6 md:p-8 rounded-xl shadow-lg mb-8 sm:mb-12">
+            <h2 class="text-xl sm:text-2xl font-bold text-gray-800 mb-5 border-b pb-3 flex items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6 mr-2 text-blue-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 10h.01"/><path d="M11 10h.01"/><path d="M15 10h.01"/><path d="M7 14h.01"/><path d="M11 14h.01"/><path d="M15 14h.01"/></svg>
+                Saved Vehicle Records (<span id="record-count">0</span>)
+            </h2>
+            
+            <div id="vehicle-records-list" class="space-y-2">
+                <p id="loading-records" class="text-gray-500 text-sm">Loading records...</p>
+                <!-- Vehicle items will be inserted here -->
+            </div>
+            
+            <p id="no-records" class="text-gray-500 text-sm hidden mt-4">No records found. Scan and save a vehicle above!</p>
+        </section>
+
+
+        <!-- 3. REPORT GENERATION SECTION -->
+        <section class="bg-white p-4 sm:p-6 md:p-8 rounded-xl shadow-lg">
+            <h2 class="text-xl sm:text-2xl font-bold text-gray-800 mb-6 border-b pb-3 flex items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6 mr-2 text-blue-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg>
+                Generate Operational Reports
+            </h2>
+
+            <div id="report-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+                <!-- Report cards will be generated here by JavaScript -->
+            </div>
+        </section>
+
+        <!-- Modals -->
+        
+        <!-- Report Output Modal -->
+        <div id="output-modal" class="modal-overlay">
+            <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 md:max-w-4xl max-h-[95vh] md:max-h-[90vh] overflow-hidden">
+                <div class="flex justify-between items-center p-4 md:p-5 border-b">
+                    <h3 id="modal-title" class="text-lg md:text-xl font-bold text-gray-800">Report Details</h3>
+                    <button id="close-modal" class="text-gray-400 hover:text-gray-600 text-3xl leading-none">&times;</button>
+                </div>
+                <div class="p-4 md:p-5 overflow-y-auto max-h-[80vh] md:max-h-[75vh]">
+                    <p id="modal-content" class="text-gray-700 whitespace-pre-wrap text-sm md:text-base"></p>
+                    <div id="modal-sources" class="mt-4 pt-4 border-t border-gray-100 hidden">
+                        <p class="font-semibold mb-2">Sources:</p>
+                        <ul id="modal-sources-list" class="list-disc list-inside text-blue-600"></ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Generic Confirmation/Message Modal (Used instead of alert/confirm) -->
+        <div id="confirm-modal" class="confirm-modal-overlay">
+            <div class="bg-white rounded-xl shadow-2xl w-full max-w-sm mx-4 p-6 text-center">
+                <h3 id="confirm-modal-title" class="text-xl font-bold text-gray-800 mb-3">Action Required</h3>
+                <p id="confirm-modal-message" class="text-gray-700 mb-6"></p>
+                <div id="confirm-modal-actions" class="flex justify-center space-x-4">
+                    <!-- Buttons inserted dynamically -->
+                </div>
+            </div>
+        </div>
+        
+        <!-- Global Loading Overlay -->
+        <div id="global-loading-overlay" class="loading-overlay">
+            <div class="flex flex-col items-center p-6 bg-white rounded-xl shadow-lg">
+                <div class="spinner mb-3 w-8 h-8 border-t-4"></div>
+                <p id="loading-text" class="text-lg font-semibold text-blue-600">Processing Request...</p>
+            </div>
+        </div>
+
+    </div>
+
+    <script type="module">
+        // --- Firebase/Auth Setup ---
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-app.js";
+        import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-analytics.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-auth.js";
+        import { getFirestore, setLogLevel, doc, setDoc, collection, onSnapshot, query, where, deleteDoc } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-firestore.js";
+
+        // Global variables provided by the environment
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = {
+          apiKey: "AIzaSyAPVvI_qsguCc6vM6cJzg12SqWYVbUL1W4",
+          authDomain: "ehvolvomoves.firebaseapp.com",
+          projectId: "ehvolvomoves",
+          storageBucket: "ehvolvomoves.firebasestorage.app",
+          messagingSenderId: "529576600523",
+          appId: "1:529576600523:web:0d2429a18309aed7850c4e",
+          measurementId: "G-0THN58SGQC"
+        };
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        let db, auth, userId = null;
+        const userDisplay = document.getElementById('user-id');
+        setLogLevel('Debug'); // Enable Firebase logging
+
+        if (firebaseConfig) {
+            const app = initializeApp(firebaseConfig);
+            const analytics = getAnalytics(app);
+            db = getFirestore(app);
+            auth = getAuth(app);
+            
+            const authenticateUser = async () => {
+                try {
+                    if (initialAuthToken) {
+                        await signInWithCustomToken(auth, initialAuthToken);
+                    } else {
+                        await signInAnonymously(auth);
+                    }
+                } catch (error) {
+                    console.error("Firebase Auth Error:", error);
+                    try {
+                        await signInAnonymously(auth);
+                    } catch (anonError) {
+                        console.error("Firebase Anonymous Auth Fallback Error:", anonError);
+                    }
+                }
+            };
+
+            onAuthStateChanged(auth, (user) => {
+                if (user) {
+                    userId = user.uid;
+                    userDisplay.textContent = userId;
+                    // Once authenticated, start listening for records
+                    setupVehicleListener();
+                } else {
+                    userId = 'Anonymous-' + crypto.randomUUID();
+                    userDisplay.textContent = userId + ' (Unauthenticated - Temporary ID)';
+                }
+            });
+
+            authenticateUser();
+        } else {
+            userDisplay.textContent = "Firebase Config Missing. App limited.";
+        }
+
+
+        // --- DOM Elements & State ---
+        const API_KEY = "";
+        const API_URL_TEXT = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${API_KEY}`;
+        
+        let imageMimeType = '';
+        let imageBase64Data = '';
+        let scannedVehicleData = null; // Stores the data ready to be saved/updated
+        
+        const imageInput = document.getElementById('imageInput');
+        const imagePreview = document.getElementById('imagePreview');
+        const uploadPlaceholder = document.getElementById('uploadPlaceholder');
+        const queryInput = document.getElementById('queryInput');
+        const scanButton = document.getElementById('scanButton');
+        const resultAction = document.getElementById('resultAction');
+        const resultBox = document.getElementById('resultBox');
+        const citationBox = document.getElementById('citationBox');
+        const sourcesList = document.getElementById('sourcesList');
+        const saveRecordButton = document.getElementById('saveRecordButton');
+        const saveButtonText = document.getElementById('saveButtonText');
+        const globalLoadingOverlay = document.getElementById('global-loading-overlay');
+        const loadingText = document.getElementById('loading-text');
+        const errorBox = document.getElementById('errorBox');
+        const vehicleRecordsList = document.getElementById('vehicle-records-list');
+        const recordCount = document.getElementById('record-count');
+        const loadingRecords = document.getElementById('loading-records');
+        const noRecords = document.getElementById('no-records');
+        const reportGrid = document.getElementById('report-grid'); // FIX: Added missing DOM assignment
+
+        // Report Modal Elements (moved here for global access)
+        const outputModal = document.getElementById('output-modal');
+        const modalTitle = document.getElementById('modal-title');
+        const modalContent = document.getElementById('modal-content');
+        const modalSources = document.getElementById('modal-sources');
+        const modalSourcesList = document.getElementById('modal-sources-list');
+
+        // Confirmation Modal Elements
+        const confirmModal = document.getElementById('confirm-modal');
+        const confirmModalTitle = document.getElementById('confirm-modal-title');
+        const confirmModalMessage = document.getElementById('confirm-modal-message');
+        const confirmModalActions = document.getElementById('confirm-modal-actions');
+
+
+        // --- Utility Functions (fetchWithRetry, fileToBase64, generateContent) ---
+        
+        /** Converts a File object to a base64 string for the API payload. */
+        function fileToBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = () => {
+                    const base64String = reader.result.split(',')[1];
+                    resolve(base64String);
+                };
+                reader.onerror = error => reject(error);
+            });
+        }
+
+        /** Simple exponential backoff retry mechanism for fetch */
+        async function fetchWithRetry(url, options, maxRetries = 3) {
+            for (let i = 0; i < maxRetries; i++) {
+                try {
+                    const response = await fetch(url, options);
+                    if (response.status !== 429) { 
+                        return response;
+                    }
+                } catch (error) {
+                    console.error(`Attempt ${i + 1} failed with error:`, error);
+                }
+                
+                if (i < maxRetries - 1) {
+                    const delay = Math.pow(2, i) * 1000;
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                }
+            }
+            throw new Error("API call failed after multiple retries.");
+        }
+
+
+        /**
+         * Calls the Gemini API to generate content.
+         */
+        const generateContent = async (userQuery, useGrounding = false, imageParts = [], responseMimeType = "text/plain", responseSchema = null) => {
+            const contents = [{ 
+                role: "user", 
+                parts: [
+                    { text: userQuery },
+                    ...imageParts
+                ]
+            }];
+
+            let payload = {
+                contents: contents,
+                systemInstruction: { parts: [{ text: "You are a specialized lot attendant tracker AI. Provide concise, actionable, and accurate information based on the visual input or query. Format mock reports and vehicle records as clean, readable text tables or JSON." }] }
+            };
+            
+            if (useGrounding) {
+                payload.tools = [{ "google_search": {} }];
+            }
+
+            if (responseMimeType === "application/json" && responseSchema) {
+                payload.generationConfig = {
+                    responseMimeType: "application/json",
+                    responseSchema: responseSchema
+                };
+            }
+
+            try {
+                const response = await fetchWithRetry(API_URL_TEXT, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const result = await response.json();
+                const candidate = result.candidates?.[0];
+
+                if (candidate && candidate.content?.parts?.[0]?.text) {
+                    const text = candidate.content.parts[0].text;
+                    let sources = [];
+
+                    const groundingMetadata = candidate.groundingMetadata;
+                    if (groundingMetadata && groundingMetadata.groundingAttributions) {
+                        sources = groundingMetadata.groundingAttributions
+                            .map(attribution => ({
+                                uri: attribution.web?.uri,
+                                title: attribution.web?.title,
+                            }))
+                            .filter(source => source.uri && source.title);
+                    }
+                    return { text, sources };
+                }
+                return { text: "Error: Could not retrieve generated text from API.", sources: [] };
+
+            } catch (error) {
+                console.error("Gemini API call failed:", error);
+                return { text: `Error generating content: ${error.message}`, sources: [] };
+            }
+        };
+
+        // --- Custom Confirmation Modal ---
+
+        /**
+         * Shows a custom modal instead of alert() or confirm().
+         * @param {string} title - The title of the modal.
+         * @param {string} message - The message body.
+         * @param {Array<Object>} buttons - Array of button configs: {text, className, action: function}
+         */
+        function showCustomModal(title, message, buttons) {
+            confirmModalTitle.textContent = title;
+            confirmModalMessage.textContent = message;
+            confirmModalActions.innerHTML = ''; // Clear previous buttons
+
+            buttons.forEach(btnConfig => {
+                const button = document.createElement('button');
+                button.textContent = btnConfig.text;
+                button.className = `px-4 py-2 rounded-lg font-medium shadow-md ${btnConfig.className}`;
+                button.onclick = () => {
+                    confirmModal.style.display = 'none';
+                    if (btnConfig.action) {
+                        btnConfig.action();
+                    }
+                };
+                confirmModalActions.appendChild(button);
+            });
+
+            confirmModal.style.display = 'flex';
+        }
+
+
+        // --- FIRESTORE LOGIC ---
+
+        const VEHICLES_COLLECTION = 'vehicles';
+        
+        /** Gets the Firestore collection path for the current user's private data. */
+        function getCollectionPath() {
+            if (!userId) return null;
+            return `/artifacts/${appId}/users/${userId}/${VEHICLES_COLLECTION}`;
+        }
+
+        /**
+         * Sets up a real-time listener for the current user's vehicle records.
+         */
+        function setupVehicleListener() {
+            if (!db || !userId) return;
+
+            const path = getCollectionPath();
+            if (!path) return;
+
+            const vehiclesRef = collection(db, path);
+            const vehiclesQuery = query(vehiclesRef); // No orderBy() to avoid index requirement
+
+            loadingRecords.classList.remove('hidden');
+
+            onSnapshot(vehiclesQuery, (snapshot) => {
+                loadingRecords.classList.add('hidden');
+                
+                const vehicles = [];
+                snapshot.forEach(doc => {
+                    // Store the Firestore ID and the data
+                    vehicles.push({ id: doc.id, ...doc.data() });
+                });
+
+                // Sort in memory by last updated date (descending)
+                vehicles.sort((a, b) => b.lastUpdated - a.lastUpdated);
+
+                renderVehicleList(vehicles);
+                recordCount.textContent = vehicles.length;
+                if (vehicles.length === 0) {
+                    noRecords.classList.remove('hidden');
+                } else {
+                    noRecords.classList.add('hidden');
+                }
+            }, (error) => {
+                console.error("Error listening to vehicle records:", error);
+                loadingRecords.textContent = "Error loading records.";
+            });
+        }
+        
+        /**
+         * Renders the list of vehicles retrieved from Firestore.
+         * @param {Array<Object>} vehicles - Array of vehicle records.
+         */
+        function renderVehicleList(vehicles) {
+            vehicleRecordsList.innerHTML = ''; // Clear existing list
+
+            vehicles.forEach(vehicle => {
+                const item = document.createElement('div');
+                // Use a data attribute for easy lookup later (e.g., in handleScan)
+                item.setAttribute('data-doc-id', vehicle.id);
+                item.className = 'vehicle-list-item bg-gray-50 p-4 rounded-lg border border-gray-200 flex justify-between items-center shadow-sm';
+                item.innerHTML = `
+                    <div class="flex-grow min-w-0">
+                        <p class="text-base font-semibold text-gray-900 truncate">${vehicle.makeModel || 'Unknown Vehicle'}</p>
+                        <p class="text-sm text-gray-600">VIN: ${vehicle.vinShort || 'N/A'} | Location: ${vehicle.location || 'N/A'}</p>
+                        <p class="text-xs text-gray-400 mt-1">Last Update: ${new Date(vehicle.lastUpdated).toLocaleString()}</p>
+                    </div>
+                    <div class="flex space-x-2 ml-4">
+                        <button class="view-btn text-blue-500 hover:text-blue-700 p-1 rounded-full bg-blue-100 hover:bg-blue-200 transition-colors" title="View Details">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 12c0 1.66-1.34 3-3 3s-3-1.34-3-3 1.34-3 3-3 3 1.34 3 3z"/><path d="M12 2C6.48 2 2 7 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14c-2.21 0-4-1.79-4-4s1.79-4 4-4 4 1.79 4 4-1.79 4-4 4z"/></svg>
+                        </button>
+                        <button class="delete-btn text-red-500 hover:text-red-700 p-1 rounded-full bg-red-100 hover:bg-red-200 transition-colors" title="Delete Record">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6"/></svg>
+                        </button>
+                    </div>
+                `;
+
+                // Event listeners for actions
+                item.querySelector('.view-btn').addEventListener('click', () => viewVehicleDetails(vehicle));
+                item.querySelector('.delete-btn').addEventListener('click', (e) => {
+                    e.stopPropagation(); // Prevent the main click event if the parent was clickable
+                    promptDelete(vehicle);
+                });
+
+                vehicleRecordsList.appendChild(item);
+            });
+        }
+        
+        /**
+         * Parses the raw text output from the LLM into a structured Vehicle object.
+         * This uses a simplified parsing method based on expected LLM output format.
+         * @param {string} text - The raw text output from the LLM.
+         * @returns {Object|null} Structured vehicle data or null on failure.
+         */
+        function parseVehicleData(text, inputIdentifier) {
+            const data = {};
+            const lines = text.split('\n').filter(line => line.includes(':'));
+
+            // Simple line-by-line parsing
+            lines.forEach(line => {
+                const [key, ...values] = line.split(':');
+                const cleanKey = key.trim().replace(/[^a-zA-Z0-9]+/g, '');
+                const cleanValue = values.join(':').trim();
+
+                if (cleanKey.toLowerCase().includes('vin') && cleanKey.length < 10) {
+                    data.vin = cleanValue;
+                    data.vinShort = cleanValue.length > 4 ? cleanValue.slice(-4) : cleanValue;
+                } else if (cleanKey.toLowerCase().includes('stocktag')) {
+                    data.stockTag = cleanValue;
+                } else if (cleanKey.toLowerCase().includes('make') && cleanKey.toLowerCase().includes('model')) {
+                    data.makeModel = cleanValue;
+                } else if (cleanKey.toLowerCase().includes('location') && cleanKey.length < 15) {
+                    data.location = cleanValue;
+                } else if (cleanKey.toLowerCase().includes('status')) {
+                    data.status = cleanValue;
+                }
+            });
+
+            // Basic validation and fallback for required fields
+            if (!data.vin || !data.makeModel || !data.location) {
+                console.warn("Failed to parse critical data. Using fallback values.");
+                data.vin = data.vin || inputIdentifier.toUpperCase();
+                data.makeModel = data.makeModel || 'GENERIC VEHICLE';
+                data.location = data.location || 'UNKNOWN';
+                data.status = data.status || 'SCANNED';
+                data.vinShort = data.vinShort || (data.vin.length > 4 ? data.vin.slice(-4) : data.vin);
+            }
+
+            // Generate a unique ID for the document (based on VIN/Tag)
+            data.docId = data.vin.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+            
+            return data;
+        }
+
+        /**
+         * Saves a new record or updates an existing one in Firestore.
+         */
+        async function saveVehicleRecord() {
+            if (!db || !userId || !scannedVehicleData) {
+                showCustomModal("Error", "No scanned data available to save. Please complete a scan first.", [{ text: "OK", className: "bg-blue-600 text-white hover:bg-blue-700" }]);
+                return;
+            }
+
+            const vehicle = scannedVehicleData;
+            const docId = vehicle.docId; // The unique ID derived from VIN/Tag
+            const path = getCollectionPath();
+
+            if (!path) return;
+
+            const docRef = doc(db, path, docId);
+            const isNewRecord = saveButtonText.textContent.includes('New');
+
+            loadingText.textContent = isNewRecord ? "Saving New Record..." : "Updating Record Location...";
+            globalLoadingOverlay.style.display = 'flex';
+
+            try {
+                const dataToSave = {
+                    ...vehicle, // Includes vin, makeModel, location, status, etc.
+                    createdBy: userId,
+                    lastUpdated: Date.now(),
+                    // Optionally, store the raw text output for detailed historical context
+                    rawScanOutput: resultBox.textContent, 
+                };
+
+                await setDoc(docRef, dataToSave, { merge: true });
+
+                showCustomModal("Success!", 
+                    isNewRecord 
+                    ? `Successfully saved new record for ${vehicle.makeModel} (VIN ending ${vehicle.vinShort}) at location ${vehicle.location}.`
+                    : `Successfully updated location for ${vehicle.makeModel} to ${vehicle.location}.`,
+                    [{ text: "Great!", className: "bg-green-600 text-white hover:bg-green-700" }]
+                );
+                
+                // Clear state after successful save
+                scannedVehicleData = null;
+                saveRecordButton.classList.add('hidden');
+                resultAction.textContent = '(Scanned data is ready to save)';
+
+
+            } catch (e) {
+                console.error("Error adding/updating document: ", e);
+                showCustomModal("Database Error", `Failed to save record: ${e.message}`, [{ text: "Close", className: "bg-gray-400 text-white hover:bg-gray-500" }]);
+            } finally {
+                globalLoadingOverlay.style.display = 'none';
+            }
+        }
+        
+        /**
+         * Displays a vehicle's full details in the modal.
+         */
+        function viewVehicleDetails(vehicle) {
+            let detailText = `
+Vehicle: ${vehicle.makeModel}
+Full VIN: ${vehicle.vin}
+Stock Tag: ${vehicle.stockTag || 'N/A'}
+Current Location: ${vehicle.location}
+Status: ${vehicle.status}
+
+--- SYSTEM DATA ---
+Record ID: ${vehicle.id}
+Created By: ${vehicle.createdBy}
+Last Updated: ${new Date(vehicle.lastUpdated).toLocaleString()}
+
+--- SCAN CONTEXT ---
+${vehicle.rawScanOutput || 'No detailed scan context available.'}
+            `.trim();
+            
+            // Reusing the report modal for detail view
+            displayOutput(`Details: ${vehicle.makeModel}`, detailText, []);
+        }
+
+        /**
+         * Prompts the user before deleting a record.
+         */
+        function promptDelete(vehicle) {
+            showCustomModal(
+                "Confirm Deletion",
+                `Are you sure you want to permanently delete the record for "${vehicle.makeModel}" at location "${vehicle.location}"?`,
+                [
+                    { text: "Cancel", className: "bg-gray-400 text-white hover:bg-gray-500" },
+                    { text: "Yes, Delete", className: "bg-red-600 text-white hover:bg-red-700", action: () => deleteVehicleRecord(vehicle.id) }
+                ]
+            );
+        }
+
+        /**
+         * Deletes a vehicle record from Firestore.
+         */
+        async function deleteVehicleRecord(docId) {
+            if (!db || !userId) return;
+
+            const path = getCollectionPath();
+            if (!path) return;
+            
+            loadingText.textContent = "Deleting Record...";
+            globalLoadingOverlay.style.display = 'flex';
+
+            try {
+                const docRef = doc(db, path, docId);
+                await deleteDoc(docRef);
+
+                showCustomModal("Deleted", "Vehicle record successfully removed.", [{ text: "OK", className: "bg-green-600 text-white hover:bg-green-700" }]);
+            } catch (e) {
+                console.error("Error deleting document: ", e);
+                showCustomModal("Error", `Failed to delete record: ${e.message}`, [{ text: "Close", className: "bg-gray-400 text-white hover:bg-gray-500" }]);
+            } finally {
+                globalLoadingOverlay.style.display = 'none';
+            }
+        }
+
+        // --- 1. VIN/LOCATION SCANNER LOGIC ---
+
+        /** Handles image file selection and updates the preview. */
+        async function previewImage(event) {
+            const file = event.target.files[0];
+            scannedVehicleData = null;
+            saveRecordButton.classList.add('hidden');
+            resultAction.textContent = '(Scanned data is ready to save)';
+
+            if (file) {
+                try {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        imagePreview.src = e.target.result;
+                        imagePreview.classList.remove('hidden');
+                        uploadPlaceholder.classList.add('hidden');
+                    };
+                    reader.readAsDataURL(file);
+
+                    imageBase64Data = await fileToBase64(file);
+                    imageMimeType = file.type;
+                    scanButton.disabled = false;
+                    errorBox.classList.add('hidden');
+                } catch (e) {
+                    console.error("Error processing file:", e);
+                    errorBox.textContent = "Error processing image file.";
+                    errorBox.classList.remove('hidden');
+                    scanButton.disabled = true;
+                }
+            } else {
+                imagePreview.classList.add('hidden');
+                uploadPlaceholder.classList.remove('hidden');
+                scanButton.disabled = true;
+                imageBase64Data = '';
+                imageMimeType = '';
+            }
+        }
+
+        /** Handles the main scan logic */
+        async function handleScan() {
+            const inputIdentifier = queryInput.value.trim();
+            if (!imageBase64Data || !inputIdentifier) {
+                errorBox.textContent = "Please upload an image AND enter an ID (VIN/Tag/Stock#) before scanning.";
+                errorBox.classList.remove('hidden');
+                return;
+            }
+
+            // Reset UI
+            errorBox.classList.add('hidden');
+            resultBox.textContent = "Scanning image for identifier and looking up mock record...";
+            citationBox.classList.add('hidden');
+            sourcesList.innerHTML = '';
+            scanButton.disabled = true;
+            saveRecordButton.classList.add('hidden');
+            loadingText.textContent = "Running AI Scan...";
+            globalLoadingOverlay.style.display = 'flex';
+            scannedVehicleData = null; // Clear previous scan data
+
+            const scanPrompt = `
+                Task: VIN/Identifier Lookup and Data Extraction.
+                1. Visually scan the uploaded image. Extract the most prominent identifier (VIN, Stock Tag, License Plate, or Lot Location).
+                2. The user has provided the following key to search/identify: "${inputIdentifier}".
+                3. Generate a detailed mock vehicle record.
+                4. The output MUST be in a simple JSON structure with the following keys ONLY: "vin", "stockTag", "makeModel", "location", "status". Set values to "N/A" if unknown.
+                5. The JSON output MUST be enclosed in a single markdown block, followed by a human-readable summary of the findings.
+            `;
+            
+            const schema = {
+                type: "OBJECT",
+                properties: {
+                    "vin": { "type": "STRING", "description": "Full 17-digit VIN or best guess." },
+                    "stockTag": { "type": "STRING", "description": "Dealer stock tag or number." },
+                    "makeModel": { "type": "STRING", "description": "Make and model of the vehicle (e.g., Toyota Camry)." },
+                    "location": { "type": "STRING", "description": "The current lot location found in the image or suggested by the query." },
+                    "status": { "type": "STRING", "description": "Current operational status (e.g., PDI Pending, Ready for Sale, Needs Wash)." }
+                }
+            };
+
+
+            const imageParts = [{
+                inlineData: {
+                    mimeType: imageMimeType,
+                    data: imageBase64Data
+                }
+            }];
+
+            const result = await generateContent(scanPrompt, false, imageParts, "application/json", schema);
+
+            // Update UI with results
+            globalLoadingOverlay.style.display = 'none';
+            scanButton.disabled = false;
+            
+            let structuredData = null;
+
+            try {
+                // Find and parse the JSON block from the LLM's text
+                const jsonMatch = result.text.match(/```json\s*([\s\S]*?)\s*```/);
+                if (jsonMatch && jsonMatch[1]) {
+                    structuredData = JSON.parse(jsonMatch[1]);
+                } else {
+                    // Fallback attempt to parse the entire text if not in a block
+                    structuredData = JSON.parse(result.text);
+                }
+
+                // If successful, parse and set up for saving
+                scannedVehicleData = parseVehicleData(result.text, inputIdentifier);
+                
+                // Check if this record already exists in the local list
+                const existingVehicle = document.getElementById('vehicle-records-list').querySelector(`[data-doc-id="${scannedVehicleData.docId}"]`);
+
+                if (existingVehicle) {
+                    saveButtonText.textContent = 'Update Location/Status for Existing Record';
+                    resultAction.textContent = '(Existing record found - ready to update)';
+                } else {
+                    saveButtonText.textContent = 'Save New Vehicle Record';
+                    resultAction.textContent = '(New record - ready to save)';
+                }
+                
+                // Show Save Button and display the raw output
+                resultBox.textContent = result.text;
+                saveRecordButton.classList.remove('hidden');
+
+
+            } catch (e) {
+                console.error("Error parsing or processing structured data:", e);
+                // If parsing fails, just display the raw text output and an error message
+                resultBox.textContent = `ERROR: Could not parse structured vehicle data. Raw output:\n\n${result.text}`;
+                errorBox.textContent = "AI scan failed to produce a usable data structure. Please try again or refine the image/query.";
+                errorBox.classList.remove('hidden');
+                scannedVehicleData = null;
+                saveRecordButton.classList.add('hidden');
+            }
+
+
+            // Display sources if any (for non-database, grounded content)
+            if (result.sources && result.sources.length > 0) {
+                sourcesList.innerHTML = '';
+                result.sources.forEach(source => {
+                    const li = document.createElement('li');
+                    const a = document.createElement('a');
+                    a.href = source.uri;
+                    a.target = "_blank";
+                    a.className = "text-blue-600 hover:text-blue-800 hover:underline";
+                    a.textContent = source.title;
+                    li.appendChild(a);
+                    sourcesList.appendChild(li);
+                });
+                citationBox.classList.remove('hidden');
+            } else {
+                citationBox.classList.add('hidden');
+            }
+        }
+
+
+        // --- 2. REPORT GENERATION LOGIC ---
+
+        const reports = [
+            {
+                id: 'master_lot_assignment',
+                title: 'Master Lot Assignment List',
+                description: 'A complete list of all active vehicles, grouped by their assigned lot location. Essential for management.',
+                icon: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15l-3-3 1.41-1.41L11 14.17l3.59-3.59L16 12l-5 5z',
+                prompt: `Generate a detailed, organized mock report of the Master Lot Assignment List for a car dealership. The report must include three different lots (e.g., Main Lot, Overflow Lot, Service Lot). For each vehicle, include Stock Tag, VIN (last 4 digits only), Make, Model, and current Location (e.g., A101, B205). Provide data for at least 15 vehicles total.`,
+            },
+            {
+                id: 'start_ups_overdue',
+                title: 'Start-Ups Overdue (14+ Days)',
+                description: 'Identifies vehicles that have not been started or moved in more than 14 days, requiring immediate attention.',
+                icon: 'M12 4.5l-1.5 1.5H8v-2H5v2H2v-2H1v6h2v-2h3v2h2l1.5 1.5L12 12l-1.5-1.5L8 12v-2H5v2H2v-2H1v6h2v-2h3v2h2l1.5 1.5L12 18l1.5-1.5L16 18v-2h3v2h3V12h-3v2h-3v-2l-1.5-1.5L12 8.5z',
+                prompt: `Generate a detailed mock report for 'Start-Ups Overdue (14+ Days)'. Include the Stock Tag, VIN, Lot Location, and the "Days Since Last Move/Start." List at least 5 vehicles with days since move ranging from 15 to 45 days.`,
+            },
+            {
+                id: 'maintenance_check_required',
+                title: 'Maintenance Check Required',
+                description: 'List of vehicles requiring immediate maintenance or pre-delivery inspections (PDIs), including fuel checks.',
+                icon: 'M12 2L4 5v6.09c0 5.05 3.2 9.73 7.6 11.41.13.05.27.05.4 0C16.8 20.82 20 16.05 20 11.09V5l-8-3zm0 18.2c-3.7-1.4-6-5-6-9.11V6.3l6-2.25 6 2.25v4.79c0 4.11-2.3 7.71-6 9.11zM11 7h2v6h-2V7zm0 8h2v2h-2v-2z',
+                prompt: `Generate a mock report for 'Maintenance Check Required'. For each vehicle (list 6), specify the Stock Tag, Location, and the specific reason for the check (e.g., PDI Pending, Low Fuel, 5k Mile Service Due).`,
+            },
+            {
+                id: 'location_conflict',
+                title: 'Location Conflict Report',
+                description: 'Flags vehicles where the system-recorded location does not match the last known physical check-in/scan location.',
+                icon: 'M10 18h4v-2h-4v2zm0-4h4v-2h-4v2zm0-4h4V8h-4v2zM6 22l6-3 6 3V4c0-1.1-.9-2-2-2H8c-1.1 0-2 .9-2 2v18z',
+                prompt: `Generate a mock Location Conflict Report. List 4 vehicles. For each, show Stock Tag, System Location (e.g., A101), and Last Scanned Location (e.g., B205). Add a 'Conflict Details' column explaining why the location mismatch matters.`,
+            },
+            {
+                id: 'unresolved_notes',
+                title: 'Unresolved Notes Report',
+                description: 'Lists all vehicles with open/unresolved notes, ensuring follow-up on critical tasks or customer requests.',
+                icon: 'M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z',
+                prompt: `Generate a mock Unresolved Notes Report. List 5 vehicles. Include Stock Tag, Location, Note Creation Date, and the Unresolved Note Content (e.g., "Customer needs specific wheel locks installed," "Check engine light came on during last test drive").`,
+            }
+        ];
+
+        // Function to render the report cards
+        const renderReportCards = () => {
+            reportGrid.innerHTML = ''; // reportGrid is now correctly defined
+            reports.forEach(report => {
+                const card = document.createElement('div');
+                card.id = report.id;
+                card.className = 'report-card bg-gray-50 border border-gray-200 p-5 rounded-lg hover:bg-blue-50 transition-colors shadow-sm flex flex-col justify-between';
+                card.innerHTML = `
+                    <div>
+                        <svg class="w-8 h-8 text-blue-500 mb-3" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="${report.icon}"/>
+                        </svg>
+                        <h4 class="text-lg font-semibold text-gray-900 mb-2">${report.title}</h4>
+                        <p class="text-sm text-gray-600">${report.description}</p>
+                    </div>
+                    <button class="mt-4 w-full bg-blue-600 text-white py-2 px-4 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors shadow">Generate Report</button>
+                `;
+                card.querySelector('button').addEventListener('click', () => generateMockReport(report));
+                reportGrid.appendChild(card);
+            });
+        };
+
+        // Function to display the report output in the modal
+        const displayOutput = (title, text, sources = []) => {
+            modalTitle.textContent = title;
+            modalContent.textContent = text;
+            
+            modalSourcesList.innerHTML = '';
+            if (sources.length > 0) {
+                modalSources.classList.remove('hidden');
+                sources.forEach(source => {
+                    const li = document.createElement('li');
+                    li.innerHTML = `<a href="${source.uri}" target="_blank" class="hover:underline">${source.title}</a>`;
+                    modalSourcesList.appendChild(li);
+                });
+            } else {
+                modalSources.classList.add('hidden');
+            }
+
+            outputModal.style.display = 'flex';
+        };
+
+        // Main function to simulate report generation via LLM call
+        const generateMockReport = async (report) => {
+            loadingText.textContent = `Generating ${report.title}...`;
+            globalLoadingOverlay.style.display = 'flex';
+
+            const result = await generateContent(report.prompt, false, []); 
+
+            globalLoadingOverlay.style.display = 'none';
+            
+            if (result.text) {
+                displayOutput(report.title, result.text, result.sources);
+            } else {
+                displayOutput(report.title, result.text || "Error generating report. Check console.", []);
+            }
+        };
+
+        // Close Modal Listener
+        document.getElementById('close-modal').addEventListener('click', () => {
+            outputModal.style.display = 'none';
+        });
+
+        // Initialize the report cards on load
+        window.onload = () => {
+            renderReportCards();
+        };
+    </script>
+</body>
+</html>
