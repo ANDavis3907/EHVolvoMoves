@@ -1,54 +1,21 @@
-# EHVolvoMoves
-EHVolvoMoves: AI-Powered Lot Attendant Tracker
-An intelligent, mobile-responsive inventory management system designed for automotive lot operations. This application replaces manual tracking with a digital-first approach, leveraging Google's Gemini AI to automate data entry and Firebase for real-time synchronization.
+EHVolvoMoves
+Focus: Full-stack integration and asynchronous data flow.
 
-🚀 Key Features
-AI Data Extraction: Integrates Google's Gemini 2.5 Flash model to analyze vehicle images (VIN tags, stock stickers) and automatically populate vehicle details, reducing manual entry errors.
+EHVolvoMoves
+A mobile-optimized inventory management system designed to synchronize physical lot operations with a digital database. The application leverages computer vision to automate data entry and provides real-time state management across distributed clients.
 
-Real-Time Inventory: Powered by Firebase Firestore, ensuring that vehicle moves, status updates, and location changes are synced across all devices instantly.
+Core Functionality
+AI-Assisted Data Extraction: Integrates the Gemini 2.5 Flash API to parse unstructured image data (VIN/Stock tags) into structured JSON objects.
 
-Intelligent Reporting: Custom logic to generate operational reports, including:
+Real-time Persistence: Utilizes Firebase Firestore for low-latency data synchronization and state persistence.
 
-Location Conflict Detection: Identifies inventory data mismatches.
+Operational Logic: Implements automated reporting for inventory health, including location conflict detection and maintenance (Start-Up) scheduling.
 
-Maintenance Tracking: Monitors "Start-Ups" and overdue maintenance tasks.
+Responsive Architecture: Built with a mobile-first approach using Tailwind CSS and modular ES6+ JavaScript.
 
-Master Lot List: A comprehensive, searchable database of all vehicles on-site.
+Technical Stack
+Frontend: JavaScript (Vanilla), HTML5, Tailwind CSS
 
-Mobile-Optimized UI: Built with a "mobile-first" philosophy using Tailwind CSS, ensuring lot attendants can easily update inventory from the palm of their hand while out on the lot.
+Backend: Firebase (Auth, Firestore)
 
-🛠 Tech Stack
-Frontend: HTML5, JavaScript (ES6+), Tailwind CSS
-
-Backend/Database: Firebase (Authentication & Firestore)
-
-AI/ML: Google Gemini API (Generative AI SDK)
-
-Environment: Nix-based development configuration (dev.nix)
-
-📂 Project Structure
-Plaintext
-├── lot_tracker.html   # Main application interface and logic
-├── dev.nix            # Reproducible development environment configuration
-└── (Other Assets)     # CSS and JS modules
-🔧 Getting Started
-Prerequisites
-A Firebase project with Firestore enabled.
-
-A Google AI (Gemini) API Key.
-
-Installation
-Clone the repository:
-
-Bash
-git clone https://github.com/ANDavis3907/EHVolvoMoves.git
-Open lot_tracker.html in your browser or serve it via a local development server.
-
-Configure your Firebase and Gemini credentials within the script tags (ensure you use environment variables or secure methods for production).
-
-📈 Future Enhancements
-Integration of a barcode/QR scanner plugin for faster stock identification.
-
-Offline mode support for areas of the lot with poor connectivity.
-
-Advanced analytics dashboard for lot turnover rates.
+AI Integration: Google Generative AI SDK
